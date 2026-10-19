@@ -2,6 +2,8 @@ name: Build PapahNow
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
     inputs:
       ref:
         description: 'Branch/tag to build from FahriAdison/PapahNow'
