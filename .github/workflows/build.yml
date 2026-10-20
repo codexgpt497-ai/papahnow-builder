@@ -8,7 +8,7 @@ on:
       ref:
         description: 'Branch/tag to build from FahriAdison/PapahNow'
         required: false
-        default: 'main'
+        default: 'phase1-poc'
 
 jobs:
   build:
