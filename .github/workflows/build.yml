@@ -48,6 +48,36 @@ jobs:
           echo "PAPAHNOW_KEYSTORE_PATH=/tmp/papahnow.keystore" >> "$GITHUB_ENV"
           echo "PAPAHNOW_KEY_ALIAS=papahnow" >> "$GITHUB_ENV"
 
+      - name: Validate signing credentials
+        env:
+          PAPAHNOW_KEYSTORE_PASSWORD: ${{ secrets.PAPAHNOW_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "${PAPAHNOW_KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::PAPAHNOW_KEYSTORE_PASSWORD is empty."
+            exit 1
+          fi
+          validate_key() {
+            rm -f /tmp/papahnow-validation.csr
+            keytool -certreq -alias papahnow \
+              -keystore /tmp/papahnow.keystore \
+              -storepass "$PAPAHNOW_KEYSTORE_PASSWORD" \
+              -keypass "$1" \
+              -file /tmp/papahnow-validation.csr \
+              -noprompt >/dev/null 2>&1
+          }
+          if [ -n "${PAPAHNOW_KEY_PASSWORD:-}" ] && validate_key "$PAPAHNOW_KEY_PASSWORD"; then
+            effective="$PAPAHNOW_KEY_PASSWORD"
+            echo "Validated the dedicated key password."
+          elif validate_key "$PAPAHNOW_KEYSTORE_PASSWORD"; then
+            effective="$PAPAHNOW_KEYSTORE_PASSWORD"
+            echo "Validated that the key password matches the keystore password."
+          else
+            echo "::error::Neither configured password unlocks alias papahnow. Check the signing secrets."
+            exit 1
+          fi
+          printf 'PAPAHNOW_EFFECTIVE_KEY_PASSWORD=%s\n' "$effective" >> "$GITHUB_ENV"
+          rm -f /tmp/papahnow-validation.csr
+
       - name: Patch signing config for CI
         run: |
           python3 - << 'PYEOF'
@@ -55,7 +85,7 @@ jobs:
           p = Path('app/build.gradle.kts')
           s = p.read_text()
           old = "    buildTypes {\n        release {\n            isMinifyEnabled = false\n        }\n    }"
-          new = "    signingConfigs {\n        create(\"release\") {\n            storeFile = file(System.getenv(\"PAPAHNOW_KEYSTORE_PATH\") ?: \"papahnow.keystore\")\n            storePassword = System.getenv(\"PAPAHNOW_KEYSTORE_PASSWORD\") ?: \"\"\n            keyAlias = System.getenv(\"PAPAHNOW_KEY_ALIAS\") ?: \"papahnow\"\n            keyPassword = System.getenv(\"PAPAHNOW_KEY_PASSWORD\") ?: \"\"\n        }\n    }\n    buildTypes {\n        release {\n            isMinifyEnabled = false\n            signingConfig = signingConfigs.getByName(\"release\")\n        }\n    }"
+          new = "    signingConfigs {\n        create(\"release\") {\n            storeFile = file(System.getenv(\"PAPAHNOW_KEYSTORE_PATH\") ?: \"papahnow.keystore\")\n            storePassword = System.getenv(\"PAPAHNOW_KEYSTORE_PASSWORD\") ?: \"\"\n            keyAlias = System.getenv(\"PAPAHNOW_KEY_ALIAS\") ?: \"papahnow\"\n            keyPassword = System.getenv(\"PAPAHNOW_EFFECTIVE_KEY_PASSWORD\") ?: \"\"\n        }\n    }\n    buildTypes {\n        release {\n            isMinifyEnabled = false\n            signingConfig = signingConfigs.getByName(\"release\")\n        }\n    }"
           if old not in s:
               raise SystemExit('Expected release buildTypes block was not found')
           p.write_text(s.replace(old, new, 1))
