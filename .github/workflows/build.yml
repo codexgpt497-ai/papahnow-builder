@@ -1,6 +1,6 @@
 name: Build PapahNow
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       ref:
